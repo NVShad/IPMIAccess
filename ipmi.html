@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>IPMI Web-KVM — пульт сервера</title>
+<style>
+  :root { --bg:#14181f; --panel:#1d2430; --fg:#dfe6ee; --accent:#4da3ff;
+          --ok:#3fb96b; --warn:#e0b455; --err:#e05555; --muted:#9fb0c3; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.45 "Segoe UI",sans-serif; height:100vh;
+         display:flex; flex-direction:column; }
+  header { background:var(--panel); padding:8px 14px; display:flex; gap:8px;
+           align-items:center; border-bottom:1px solid #2c3646; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 10px 0 0; font-weight:600; }
+  button, select { background:#2a3444; color:var(--fg); border:1px solid #3a475c;
+                   border-radius:6px; padding:6px 12px; cursor:pointer; font-size:13px; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  button.primary { background:var(--accent); color:#0b1220; border-color:var(--accent); font-weight:600; }
+  button.danger:hover:not(:disabled) { border-color:var(--err); color:var(--err); }
+  #status { margin-left:auto; font-size:13px; color:var(--muted); }
+  #status.ok { color:var(--ok); } #status.err { color:var(--err); }
+  main { flex:1; display:flex; min-height:0; }
+  #screen { flex:1; display:flex; align-items:center; justify-content:center;
+            overflow:auto; padding:10px; min-width:0; }
+  #placeholder { color:#5c6b7f; text-align:center; line-height:1.8; }
+  canvas { background:#000; box-shadow:0 0 0 1px #2c3646, 0 8px 30px rgba(0,0,0,.5); }
+  aside { width:320px; background:var(--panel); border-left:1px solid #2c3646;
+          overflow-y:auto; padding:12px; flex-shrink:0; }
+  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em;
+             color:var(--muted); margin:14px 0 8px; }
+  aside h2:first-child { margin-top:0; }
+  .card { background:#232c3a; border:1px solid #2c3646; border-radius:8px; padding:10px 12px; margin-bottom:10px; }
+  .kv { display:flex; justify-content:space-between; gap:8px; padding:2px 0; font-size:13px; }
+  .kv .k { color:var(--muted); } .kv .v { text-align:right; word-break:break-all; }
+  table.sensors { width:100%; border-collapse:collapse; font-size:13px; }
+  table.sensors td { padding:3px 4px; border-bottom:1px solid #2c3646; }
+  table.sensors td:last-child { text-align:right; white-space:nowrap; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.crit { background:var(--err); }
+  .np { color:#5c6b7f; }
+  #log { height:96px; overflow:auto; background:#0d1117; border-top:1px solid #2c3646;
+         padding:6px 12px; font:12px/1.5 Consolas,monospace; color:#8fa3bd; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>IPMI · <span id="bmcHost">BMC</span></h1>
+  <button id="btnConnect" class="primary">Подключить KVM</button>
+  <button id="btnDisconnect" disabled>Отключить</button>
+  <select id="scaleSel" title="Масштаб экрана">
+    <option value="fit" selected>Вписать в окно</option>
+    <option value="1">100%</option>
+    <option value="0.75">75%</option>
+    <option value="0.5">50%</option>
+    <option value="0.33">33%</option>
+  </select>
+  <span style="border-left:1px solid #3a475c; height:20px"></span>
+  <button id="btnOn">Включить</button>
+  <button id="btnOffSoft">Выключить (ACPI)</button>
+  <button id="btnReset">Перезагрузить</button>
+  <button id="btnCycle">Цикл питания</button>
+  <button id="btnOff" class="danger">Выключить немедленно</button>
+  <span id="status">проверка связи…</span>
+</header>
+<main>
+  <div id="screen">
+    <div id="placeholder">Нажмите «Подключить KVM».<br>
+    Экран сервера появится здесь — без Java, прямо в браузере.</div>
+  </div>
+  <aside>
+    <h2>Питание</h2>
+    <div class="card" id="powerCard"><div class="kv"><span class="k">Состояние</span><span class="v" id="powerState">…</span></div></div>
+    <h2>Датчики <span id="sensTime" style="float:right;font-weight:400;text-transform:none"></span></h2>
+    <div class="card" id="sensorsCard">загрузка…</div>
+    <h2>Система</h2>
+    <div class="card" id="infoCard">загрузка…</div>
+  </aside>
+</main>
+<div id="log"></div>
+
+<script src="novnc-aten/core/util.js"></script>
+<script src="novnc-aten/app/webutil.js"></script>
+<script>
+'use strict';
+WebUtil.load_scripts({'novnc-aten/core': [
+  'base64.js', 'websock.js', 'des.js', 'input/keysymdef.js',
+  'input/xtscancodes.js', 'input/util.js', 'input/devices.js',
+  'display.js', 'inflator.js', 'rfb.js', 'input/keysym.js',
+  'ast2100/ast2100const.js', 'ast2100/ast2100util.js',
+  'ast2100/ast2100idct.js', 'ast2100/ast2100.js'
+]});
+
+const HOST = location.hostname || 'localhost'; // при file:// hostname пустой
+const API  = 'http://' + HOST + ':7100';
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+function log(msg) {
+  logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+let rfb = null;
+
+function setStatus(text, cls) {
+  $('status').textContent = text;
+  $('status').className = cls || '';
+}
+
+async function api(path, opts) {
+  const r = await fetch(API + path, { cache: 'no-store', ...opts });
+  return r.json();
+}
+
+async function checkBmc() {
+  if (rfb && rfb._rfb_connection_state === 'connected') return; // не перезатирать статус KVM
+  try {
+    const s = await api('/api/status');
+    setStatus(s.ok ? `BMC доступен (${s.login_ms} мс)` : 'BMC: ' + s.error, s.ok ? 'ok' : 'err');
+    if (s.ok && s.bmc) {
+      $('bmcHost').textContent = s.bmc;
+      document.title = `IPMI ${s.bmc} — пульт сервера`;
+    }
+  } catch (e) {
+    setStatus('мост ipmi_server.py не запущен', 'err');
+  }
+}
+
+/* ---------------- Масштаб ---------------- */
+function fitScreen() {
+  if (!rfb) return;
+  const mode = $('scaleSel').value;
+  const box = $('screen');
+  try {
+    if (mode === 'fit') {
+      rfb.get_display().autoscale(box.clientWidth - 20, box.clientHeight - 20, true);
+    } else {
+      rfb.get_display().set_scale(parseFloat(mode));
+    }
+  } catch (e) { log('масштаб: ' + e.message); }
+}
+window.addEventListener('resize', () => { if ($('scaleSel').value === 'fit') fitScreen(); });
+
+/* ---------------- KVM ---------------- */
+function onState(r, state, oldState, msg) {
+  log('RFB: ' + state + (msg ? ' — ' + msg : ''));
+  const ph = $('placeholder'); // может быть уже удалён из DOM
+  // в этой версии noVNC финальное состояние — 'connected' ('normal' нет)
+  if (state === 'connected' || state === 'normal') {
+    setStatus('KVM подключён', 'ok');
+    $('btnConnect').disabled = true;
+    $('btnDisconnect').disabled = false;
+    if (ph) ph.style.display = 'none';
+    // реальное разрешение приходит с первым кадром — подгоняем несколько раз
+    fitScreen();
+    setTimeout(fitScreen, 600);
+    setTimeout(fitScreen, 1500);
+    setTimeout(fitScreen, 3000);
+  }
+  if (state === 'disconnected' || state === 'failed') {
+    setStatus(state === 'failed' ? 'ошибка подключения' : 'отключено', state === 'failed' ? 'err' : '');
+    $('btnConnect').disabled = false;
+    $('btnDisconnect').disabled = true;
+    if (ph) ph.style.display = '';
+  }
+}
+
+async function connect() {
+  $('btnConnect').disabled = true;
+  setStatus('получаю KVM-токен…');
+  log('Запрашиваю свежий KVM-токен у BMC…');
+  let token;
+  try {
+    const t = await api('/api/token');
+    if (!t.ok) throw new Error(t.error);
+    token = t.token;
+  } catch (e) {
+    setStatus('ошибка', 'err');
+    log('Не удалось получить токен: ' + e.message);
+    $('btnConnect').disabled = false;
+    return;
+  }
+  log('Токен получен: ' + token);
+  setStatus('подключаюсь…');
+
+  const canvas = document.createElement('canvas');
+  $('screen').innerHTML = '';
+  $('screen').appendChild(canvas);
+
+  rfb = new RFB({
+    target: canvas,
+    onUpdateState: onState,
+    onDesktopName: (r, name) => log('Рабочий стол: ' + name),
+    onFBResize: fitScreen, // сервер прислал реальное разрешение — подогнать
+  });
+  // Пароль для ATEN: "токен:токен" (форк делит по ':' на user/password)
+  rfb.connect(HOST, 5700, token + ':' + token, '');
+}
+
+function disconnect() { if (rfb) { rfb.disconnect(); } }
+
+/* ---------------- Питание ---------------- */
+async function power(action, label) {
+  if (!confirm(label + ' — выполнить?')) return;
+  log('Команда питания: ' + action);
+  try {
+    const r = await api('/api/power', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action})
+    });
+    log(r.ok ? 'Команда отправлена' : 'Ошибка BMC: ' + r.error);
+    setTimeout(loadInfo, 3000);
+  } catch (e) { log('Ошибка: ' + e.message); }
+}
+
+/* ---------------- Датчики и информация ---------------- */
+const GROUPS = { temp: 'Температуры', fan: 'Вентиляторы',
+                 voltage: 'Напряжения', chassis: 'Корпус' };
+
+async function loadSensors() {
+  try {
+    const r = await api('/api/sensors');
+    if (!r.ok) throw new Error(r.error);
+    let html = '';
+    for (const g of Object.keys(GROUPS)) {
+      const list = r.sensors.filter(s => s.group === g);
+      if (!list.length) continue;
+      html += `<div style="margin:6px 0 2px;color:var(--muted);font-size:12px">${GROUPS[g]}</div>`;
+      html += '<table class="sensors">';
+      for (const s of list) {
+        if (!s.present) {
+          html += `<tr class="np"><td>${s.name}</td><td>нет</td></tr>`;
+          continue;
+        }
+        if (s.group === 'chassis') {
+          html += `<tr><td><span class="dot ${s.ok ? 'ok' : 'crit'}"></span>${s.name}</td><td>${s.value}</td></tr>`;
+          continue;
+        }
+        const dot = `<span class="dot ${s.status}"></span>`;
+        const range = `<span class="np" style="font-size:11px"> ${s.lo_warn}…${s.hi_warn}</span>`;
+        html += `<tr><td>${dot}${s.name}</td><td>${s.value} ${s.unit}${range}</td></tr>`;
+      }
+      html += '</table>';
+    }
+    $('sensorsCard').innerHTML = html || 'нет данных';
+    $('sensTime').textContent = new Date().toLocaleTimeString();
+  } catch (e) {
+    $('sensorsCard').textContent = 'ошибка: ' + e.message;
+  }
+}
+
+const INFO_FIELDS = [
+  ['POWER', 'Питание'], ['BMC_IP', 'IP BMC'], ['BMC_MAC', 'MAC BMC'],
+  ['IPMIFW_VERSION', 'Прошивка BMC'], ['IPMIFW_BLDTIME', 'Дата прошивки'],
+  ['IPMIFW_TAG', 'Платформа'], ['KERNEL', 'Ядро BMC'], ['BIOS_VERSION', 'BIOS'],
+];
+
+async function loadInfo() {
+  try {
+    const r = await api('/api/info');
+    if (!r.ok) throw new Error(r.error);
+    const i = r.info;
+    $('powerState').innerHTML = i.POWER === 'ON'
+      ? '<b style="color:var(--ok)">включён</b>'
+      : '<b style="color:var(--err)">выключен</b>';
+    $('infoCard').innerHTML = INFO_FIELDS
+      .filter(([k]) => (i[k] || '').trim())
+      .map(([k, label]) => `<div class="kv"><span class="k">${label}</span><span class="v">${(i[k] || '').trim()}</span></div>`)
+      .join('') || 'нет данных';
+  } catch (e) {
+    $('infoCard').textContent = 'ошибка: ' + e.message;
+  }
+}
+
+window.onscriptsload = function () {
+  $('btnConnect').onclick = connect;
+  $('btnDisconnect').onclick = disconnect;
+  $('scaleSel').onchange = fitScreen;
+  $('btnOn').onclick      = () => power('on', 'Включить сервер');
+  $('btnOffSoft').onclick = () => power('off_soft', 'Выключить сервер через ACPI (корректное завершение)');
+  $('btnReset').onclick   = () => power('reset', 'Перезагрузить сервер (жёсткий reset)');
+  $('btnCycle').onclick   = () => power('cycle', 'Цикл питания (выкл/вкл)');
+  $('btnOff').onclick     = () => power('off', 'НЕМЕДЛЕННО выключить сервер (как зажатие кнопки питания)');
+  checkBmc();
+  loadSensors();
+  loadInfo();
+  setInterval(checkBmc, 30000);
+  setInterval(loadSensors, 5000);
+  setInterval(loadInfo, 15000);
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+__pycache__/
+*.log
+novnc-aten.zip
+icedtea-web-image/
+ipmi--launch-jnlp.json
+launch.jnlp
+sens_tmp.json
+wsck_tmp.py
+server_test.log
+
+# Local secrets and analysis notes — never commit
+config.bat
+IPMI-analysis.md
