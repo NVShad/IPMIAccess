@@ -1,5 +1,7 @@
 # IPMI Web-KVM для Supermicro (ATEN iKVM)
 
+[English](README.en.md) | **Русский** | [中文](README.zh-CN.md)
+
 Веб-клиент удалённого доступа к IPMI/BMC серверов Supermicro с чипом ATEN —
 **без Java, без launch.jnlp, прямо в браузере**.
 
