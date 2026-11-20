@@ -56,6 +56,7 @@
     <option value="0.5">50%</option>
     <option value="0.33">33%</option>
   </select>
+  <button id="btnKbd" title="Ctrl+Shift+X — переключить ввод клавиатуры между сервером и вашей ОС">⌨ Ввод: сервер</button>
   <span style="border-left:1px solid #3a475c; height:20px"></span>
   <button id="btnOn">Включить</button>
   <button id="btnOffSoft">Выключить (ACPI)</button>
@@ -133,11 +134,16 @@ function fitScreen() {
   const mode = $('scaleSel').value;
   const box = $('screen');
   try {
+    const disp = rfb.get_display();
+    let scale;
     if (mode === 'fit') {
-      rfb.get_display().autoscale(box.clientWidth - 20, box.clientHeight - 20, true);
+      scale = disp.autoscale(box.clientWidth - 20, box.clientHeight - 20, true);
     } else {
-      rfb.get_display().set_scale(parseFloat(mode));
+      scale = parseFloat(mode);
+      disp.set_scale(scale);
     }
+    // ВАЖНО: синхронизируем масштаб мыши, иначе курсор «уезжает» влево-вверх
+    rfb.get_mouse().set_scale(scale);
   } catch (e) { log('масштаб: ' + e.message); }
 }
 window.addEventListener('resize', () => { if ($('scaleSel').value === 'fit') fitScreen(); });
@@ -163,6 +169,10 @@ function onState(r, state, oldState, msg) {
     $('btnConnect').disabled = false;
     $('btnDisconnect').disabled = true;
     if (ph) ph.style.display = '';
+    kbRemote = true;
+    $('btnKbd').textContent = '⌨ Ввод: сервер';
+    $('btnKbd').style.borderColor = '';
+    $('btnKbd').style.color = '';
   }
 }
 
@@ -199,6 +209,33 @@ async function connect() {
 }
 
 function disconnect() { if (rfb) { rfb.disconnect(); } }
+
+/* ---------------- Захват клавиатуры (Ctrl+Shift+X) ---------------- */
+let kbRemote = true;
+function setKbGrab(remote) {
+  kbRemote = remote;
+  if (rfb) {
+    const kbd = rfb.get_keyboard();
+    kbd.set_focused(remote);
+    // отпускаем все зажатые клавиши, чтобы модификаторы не «залипли»
+    if (!remote && kbd._allKeysUp) kbd._allKeysUp();
+  }
+  const b = $('btnKbd');
+  b.textContent = remote ? '⌨ Ввод: сервер' : '⌨ Ввод: локальная ОС';
+  b.style.borderColor = remote ? '' : 'var(--warn)';
+  b.style.color = remote ? '' : 'var(--warn)';
+  log('Клавиатура: ' + (remote
+    ? 'ввод идёт на сервер'
+    : 'ввод идёт в вашу ОС (Ctrl+Shift+X — вернуть на сервер)'));
+}
+// capture=true: срабатывает раньше обработчика noVNC на document
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyX') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setKbGrab(!kbRemote);
+  }
+}, true);
 
 /* ---------------- Питание ---------------- */
 async function power(action, label) {
@@ -278,6 +315,7 @@ window.onscriptsload = function () {
   $('btnConnect').onclick = connect;
   $('btnDisconnect').onclick = disconnect;
   $('scaleSel').onchange = fitScreen;
+  $('btnKbd').onclick = () => setKbGrab(!kbRemote);
   $('btnOn').onclick      = () => power('on', 'Включить сервер');
   $('btnOffSoft').onclick = () => power('off_soft', 'Выключить сервер через ACPI (корректное завершение)');
   $('btnReset').onclick   = () => power('reset', 'Перезагрузить сервер (жёсткий reset)');
