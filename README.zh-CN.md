@@ -5,7 +5,12 @@
 适用于带 ATEN 芯片的 Supermicro 服务器 IPMI/BMC 远程访问 Web 客户端——
 **无需 Java、无需 launch.jnlp，直接在浏览器中使用**。
 
+## 截图
+
 ![控制台截图](docs/screenshot.jpg)
+
+*1920×1080 KVM 控制台（适应窗口模式）、实时传感器面板
+（温度、风扇、电压）和电源控制。*
 
 ## 功能特性
 
@@ -86,6 +91,7 @@ ATEN iKVM 协议基于 noVNC 分支实现
 | `novnc-aten/` | 支持 ATEN 的 noVNC 分支（MPL 2.0） |
 | `test_aten.py` | ATEN 握手直接测试 |
 | `test_e2e.py` | 端到端测试：API + 桥接 + 握手 |
+| `CHANGELOG.md` | 版本历史 |
 
 ## 许可证
 

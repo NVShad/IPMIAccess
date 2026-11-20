@@ -5,7 +5,12 @@
 A web client for remote IPMI/BMC access on Supermicro servers with an ATEN chip —
 **no Java, no launch.jnlp, right in your browser**.
 
+## Screenshots
+
 ![Console screenshot](docs/screenshot.jpg)
+
+*1920×1080 KVM console in fit-to-window mode, live sensor panel
+(temperatures, fans, voltages) and power controls.*
 
 ## Features
 
@@ -92,6 +97,7 @@ The approach applies to other Supermicro boards with Java-only iKVM
 | `novnc-aten/` | noVNC fork with ATEN support (MPL 2.0) |
 | `test_aten.py` | Direct ATEN handshake test |
 | `test_e2e.py` | End-to-end test: API + bridge + handshake |
+| `CHANGELOG.md` | Version history |
 
 ## Licenses
 
