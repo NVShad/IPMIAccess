@@ -27,6 +27,8 @@ A web client for remote IPMI/BMC access on Supermicro servers with an ATEN chip 
   synchronized mouse coordinates.
 - **Keyboard grab toggle** — `Ctrl+Shift+X` switches keyboard input between the
   remote server and your local OS.
+- **Sticky modifiers and Ctrl+Alt+Del** — latching Ctrl / Alt / Win buttons to
+  compose any key combination, plus a dedicated Ctrl+Alt+Delete button.
 - **One-click launch** — `IPMI-консоль.bat` starts the bridge and opens the page.
 
 ## How it works
