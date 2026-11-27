@@ -34,6 +34,12 @@
   aside h2:first-child { margin-top:0; }
   .card { background:#232c3a; border:1px solid #2c3646; border-radius:8px; padding:10px 12px; margin-bottom:10px; }
   .kv { display:flex; justify-content:space-between; gap:8px; padding:2px 0; font-size:13px; }
+  .card input[type=text], .card input[type=password] {
+    width:100%; background:#1a2230; border:1px solid #3a475c; border-radius:6px;
+    color:var(--fg); padding:6px 8px; margin:3px 0; font-size:13px; }
+  .card input:focus { outline:none; border-color:var(--accent); }
+  .btnrow { display:flex; gap:6px; margin-top:6px; }
+  .btnrow button { flex:1; padding:5px 6px; font-size:12px; }
   .kv .k { color:var(--muted); } .kv .v { text-align:right; word-break:break-all; }
   table.sensors { width:100%; border-collapse:collapse; font-size:13px; }
   table.sensors td { padding:3px 4px; border-bottom:1px solid #2c3646; }
@@ -87,6 +93,25 @@
   <aside>
     <h2>Питание</h2>
     <div class="card" id="powerCard"><div class="kv"><span class="k">Состояние</span><span class="v" id="powerState">…</span></div></div>
+    <h2>Виртуальный CD-ROM</h2>
+    <div class="card" id="vmCard">
+      <div class="kv"><span class="k">Статус</span><span class="v" id="vmStatus">…</span></div>
+      <input type="file" id="vmFile" accept=".iso" style="display:none">
+      <button id="vmPick" style="width:100%;margin:4px 0">📀 Выбрать ISO-файл с этого ПК…</button>
+      <div id="vmProgWrap" style="display:none;background:#1a2230;border-radius:4px;height:8px;margin:4px 0">
+        <div id="vmProg" style="background:var(--accent);height:8px;border-radius:4px;width:0%"></div>
+      </div>
+      <div style="font-size:11px;color:#5c6b7f;margin:2px 0 4px">…или укажите сетевую папку вручную:</div>
+      <input type="text" id="vmHost" placeholder="IP ПК с общей папкой (192.168.1.x)" title="Адрес компьютера, где лежит ISO-образ (SMB/Windows-шара)">
+      <input type="text" id="vmPath" placeholder="\share\dir\образ.iso" title="Путь к ISO на шаре, начиная с имени шары, например: \iso\windows-server.iso">
+      <input type="text" id="vmUser" placeholder="Пользователь (учётка ПК)" title="Имя пользователя Windows на ПК с шарой">
+      <input type="password" id="vmPwd" placeholder="Пароль" title="Пароль учётной записи ПК с шарой">
+      <div class="btnrow">
+        <button id="vmSave">Сохранить</button>
+        <button id="vmMount" class="primary">Смонтировать</button>
+        <button id="vmUmount">Отмонтировать</button>
+      </div>
+    </div>
     <h2>Датчики <span id="sensTime" style="float:right;font-weight:400;text-transform:none"></span></h2>
     <div class="card" id="sensorsCard">загрузка…</div>
     <h2>Система</h2>
@@ -325,6 +350,96 @@ async function power(action, label) {
   } catch (e) { log('Ошибка: ' + e.message); }
 }
 
+/* ---------------- Загрузка ISO через диалог ---------------- */
+function uploadISO(file) {
+  $('vmProgWrap').style.display = 'block';
+  const bar = $('vmProg');
+  bar.style.width = '0%';
+  log('Загружаю ' + file.name + ' (' + (file.size / 1048576).toFixed(0) +
+      ' МБ) на мост…');
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', API + '/api/upload_iso?filename=' + encodeURIComponent(file.name));
+  xhr.upload.onprogress = e => {
+    if (e.lengthComputable)
+      bar.style.width = (e.loaded / e.total * 100).toFixed(1) + '%';
+  };
+  xhr.onload = async () => {
+    let r;
+    try { r = JSON.parse(xhr.responseText); }
+    catch (e) { r = { ok: false, error: xhr.responseText.slice(0, 200) }; }
+    if (!r.ok) {
+      log('Загрузка не удалась: ' + r.error);
+      bar.style.width = '0%';
+      return;
+    }
+    bar.style.width = '100%';
+    log('Образ загружен: ' + r.filename + ' → ' + r.note);
+    $('vmHost').value = r.host;
+    $('vmPath').value = r.path;
+    if (!r.share) {
+      log('ВНИМАНИЕ: не удалось создать SMB-шару (нужны права администратора). ' +
+          'Выполните один раз в cmd от имени администратора:  net share ipmi_iso="' +
+          r.iso_dir + '" /grant:%USERNAME%,READ');
+      return;
+    }
+    await vmAction('save');
+    if ($('vmPwd').value) {
+      await vmAction('mount');
+    } else {
+      log('Введите пароль Windows (поле «Пароль» ниже) и нажмите «Смонтировать»');
+    }
+  };
+  xhr.onerror = () => log('Ошибка сети при загрузке ISO');
+  xhr.send(file);
+}
+
+/* ---------------- Виртуальный CD-ROM ---------------- */
+const VM_LABELS = { save: 'настройки сохранены',
+                    mount: 'образ смонтирован — в меню загрузки (F11) выберите Virtual CDROM',
+                    umount: 'образ отмонтирован' };
+
+async function loadVMedia() {
+  try {
+    const r = await api('/api/vmedia');
+    if (!r.ok) throw new Error(r.error);
+    const c = r.config || {};
+    // не затираем поля, если пользователь уже что-то вводит
+    if (c.HOST && !$('vmHost').value) $('vmHost').value = c.HOST;
+    if (c.PATH && !$('vmPath').value) $('vmPath').value = c.PATH;
+    if (c.USER && !$('vmUser').value) $('vmUser').value = c.USER;
+    const d = (r.devices || []).find(x => x.id === 0);
+    // коды прошивки: 0xff = нет носителя, 4 = ISO смонтирован, 0 = образ IMA
+    $('vmStatus').innerHTML = !d ? '—'
+      : d.status === 4 ? '<b style="color:var(--ok)">ISO смонтирован</b>'
+      : d.status === 0 ? 'смонтирован образ IMA'
+      : d.status === 255 ? 'не смонтирован'
+      : 'диск (код ' + d.status + ')';
+  } catch (e) {
+    $('vmStatus').textContent = 'ошибка: ' + e.message;
+  }
+}
+
+async function vmAction(action) {
+  const body = { action,
+                 host: $('vmHost').value.trim(),
+                 path: $('vmPath').value.trim(),
+                 user: $('vmUser').value,
+                 pwd:  $('vmPwd').value };
+  log('Виртуальный CD-ROM: ' + action + '…');
+  try {
+    const r = await api('/api/vmedia', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    log(r.ok ? 'Виртуальный CD-ROM: ' + (VM_LABELS[action] || 'готово')
+             : 'Ошибка BMC: ' + r.error);
+    // BMC применяет монтирование не мгновенно — обновляем статус дважды
+    setTimeout(loadVMedia, 2000);
+    setTimeout(loadVMedia, 6000);
+  } catch (e) { log('Ошибка: ' + e.message); }
+}
+
 /* ---------------- Датчики и информация ---------------- */
 const GROUPS = { temp: 'Температуры', fan: 'Вентиляторы',
                  voltage: 'Напряжения', chassis: 'Корпус' };
@@ -395,6 +510,14 @@ window.onscriptsload = function () {
   $('btnCAD').onclick = sendCAD;
   $('qualitySel').onchange = applyQuality;
   $('pixelChk').onchange = applyPixelated;
+  $('vmSave').onclick  = () => vmAction('save');
+  $('vmMount').onclick = () => vmAction('mount');
+  $('vmUmount').onclick = () => vmAction('umount');
+  $('vmPick').onclick = () => $('vmFile').click();
+  $('vmFile').onchange = e => {
+    if (e.target.files[0]) uploadISO(e.target.files[0]);
+    e.target.value = '';
+  };
   $('btnOn').onclick      = () => power('on', 'Включить сервер');
   $('btnOffSoft').onclick = () => power('off_soft', 'Выключить сервер через ACPI (корректное завершение)');
   $('btnReset').onclick   = () => power('reset', 'Перезагрузить сервер (жёсткий reset)');
@@ -403,9 +526,11 @@ window.onscriptsload = function () {
   checkBmc();
   loadSensors();
   loadInfo();
+  loadVMedia();
   setInterval(checkBmc, 30000);
   setInterval(loadSensors, 5000);
   setInterval(loadInfo, 15000);
+  setInterval(loadVMedia, 15000);
 };
 </script>
 </body>

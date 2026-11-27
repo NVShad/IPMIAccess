@@ -22,6 +22,10 @@ A web client for remote IPMI/BMC access on Supermicro servers with an ATEN chip 
   5 seconds with color-coded threshold indicators.
 - **Power control** — power on, graceful shutdown (ACPI), reset, power cycle,
   immediate power off.
+- **Virtual CD-ROM** — mount ISO images into the BMC right from the console:
+  pick an ISO in a file dialog (it is uploaded and shared automatically) or
+  point to any SMB share; mount/unmount with one click. Perfect for OS
+  recovery and bootloader repair.
 - **System information** — BMC firmware version, MAC/IP, kernel, power status.
 - **Screen scaling** — fit to window / 100% / 75% / 50% / 33%, with correctly
   synchronized mouse coordinates.

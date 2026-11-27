@@ -11,3 +11,5 @@ server_test.log
 # Local secrets and analysis notes — never commit
 config.bat
 IPMI-analysis.md
+iso_share/
+vm_cdrom.html
