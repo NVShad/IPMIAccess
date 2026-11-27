@@ -326,6 +326,16 @@ def save_iso_stream(rfile, length, filename):
     os.makedirs(ISO_DIR, exist_ok=True)
     path = os.path.join(ISO_DIR, name)
     tmp = path + ".part"
+    # Тот же файл уже лежит в шаре (и, возможно, смонтирован в BMC) —
+    # не качаем заново и не трогаем его.
+    if os.path.exists(path) and os.path.getsize(path) == length:
+        skipped = length
+        while skipped > 0:
+            chunk = rfile.read(min(1 << 20, skipped))
+            if not chunk:
+                break
+            skipped -= len(chunk)
+        return name, path
     remaining = length
     # Пишем во временный файл: если источник — тот же самый файл
     # (выбран прямо из iso_share), он не трогается до конца загрузки.
