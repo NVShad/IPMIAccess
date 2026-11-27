@@ -57,6 +57,14 @@
     <option value="0.5">50%</option>
     <option value="0.33">33%</option>
   </select>
+  <select id="qualitySel" title="Качество видео: выше = чётче текст, больше трафик">
+    <option value="max" selected>Качество: максимум</option>
+    <option value="med">Качество: среднее</option>
+    <option value="low">Качество: экономия</option>
+  </select>
+  <label title="Отключить сглаживание при масштабировании — текст заметно чётче"
+         style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+    <input type="checkbox" id="pixelChk" checked>Резкие пиксели</label>
   <button id="btnKbd" title="Ctrl+Shift+X — переключить ввод клавиатуры между сервером и вашей ОС">⌨ Ввод: сервер</button>
   <span style="border-left:1px solid #3a475c; height:20px"></span>
   <button id="btnModCtrl" title="Зажать/отпустить Ctrl на сервере">Ctrl</button>
@@ -143,7 +151,8 @@ function fitScreen() {
     const disp = rfb.get_display();
     let scale;
     if (mode === 'fit') {
-      scale = disp.autoscale(box.clientWidth - 20, box.clientHeight - 20, true);
+      // downscaleOnly=false: маленькие экраны (BIOS 720x400) растягиваем на окно
+      scale = disp.autoscale(box.clientWidth - 20, box.clientHeight - 20, false);
     } else {
       scale = parseFloat(mode);
       disp.set_scale(scale);
@@ -153,6 +162,28 @@ function fitScreen() {
   } catch (e) { log('масштаб: ' + e.message); }
 }
 window.addEventListener('resize', () => { if ($('scaleSel').value === 'fit') fitScreen(); });
+
+/* ---------------- Качество видео ---------------- */
+// ATEN: квантование 0x0..0xB (выше = лучше), субдискретизация 444 (без неё) или 422.
+// 4:2:0 сильно «мылит» текст, поэтому 444 ставим даже на среднем качестве.
+const QUALITY_PRESETS = {
+  max: { qt: 0xB, sub: 444, label: 'максимум (0xB, 4:4:4)' },
+  med: { qt: 0x7, sub: 444, label: 'среднее (0x7, 4:4:4)' },
+  low: { qt: 0x3, sub: 422, label: 'экономия трафика (0x3, 4:2:0)' },
+};
+function applyQuality() {
+  if (!rfb || rfb._rfb_connection_state !== 'connected') return;
+  const p = QUALITY_PRESETS[$('qualitySel').value] || QUALITY_PRESETS.max;
+  try {
+    rfb.atenChangeVideoSettings(p.qt, p.qt, p.sub);
+    log('Качество видео: ' + p.label);
+  } catch (e) { log('качество видео: ' + e.message); }
+}
+
+function applyPixelated() {
+  const c = document.querySelector('#screen canvas');
+  if (c) c.style.imageRendering = $('pixelChk').checked ? 'pixelated' : '';
+}
 
 /* ---------------- KVM ---------------- */
 function onState(r, state, oldState, msg) {
@@ -164,6 +195,10 @@ function onState(r, state, oldState, msg) {
     $('btnConnect').disabled = true;
     $('btnDisconnect').disabled = false;
     if (ph) ph.style.display = 'none';
+    applyPixelated();
+    // просим у BMC максимальное качество (сервер применит со следующего кадра)
+    applyQuality();
+    setTimeout(applyQuality, 1500);
     // реальное разрешение приходит с первым кадром — подгоняем несколько раз
     fitScreen();
     setTimeout(fitScreen, 600);
@@ -358,6 +393,8 @@ window.onscriptsload = function () {
   $('btnModAlt').onclick = () => toggleMod('Alt');
   $('btnModWin').onclick = () => toggleMod('Win');
   $('btnCAD').onclick = sendCAD;
+  $('qualitySel').onchange = applyQuality;
+  $('pixelChk').onchange = applyPixelated;
   $('btnOn').onclick      = () => power('on', 'Включить сервер');
   $('btnOffSoft').onclick = () => power('off_soft', 'Выключить сервер через ACPI (корректное завершение)');
   $('btnReset').onclick   = () => power('reset', 'Перезагрузить сервер (жёсткий reset)');

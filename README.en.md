@@ -25,6 +25,10 @@ A web client for remote IPMI/BMC access on Supermicro servers with an ATEN chip 
 - **System information** — BMC firmware version, MAC/IP, kernel, power status.
 - **Screen scaling** — fit to window / 100% / 75% / 50% / 33%, with correctly
   synchronized mouse coordinates.
+- **Video quality control** — requests the highest ATEN quantization (0xB) and
+  4:4:4 chroma (no subsampling) for crisp text; medium/bandwidth-saver presets
+  available. Optional pixelated rendering (no smoothing) keeps text sharp at
+  any scale.
 - **Keyboard grab toggle** — `Ctrl+Shift+X` switches keyboard input between the
   remote server and your local OS.
 - **Sticky modifiers and Ctrl+Alt+Del** — latching Ctrl / Alt / Win buttons to
