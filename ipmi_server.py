@@ -325,16 +325,27 @@ def save_iso_stream(rfile, length, filename):
         name += ".iso"
     os.makedirs(ISO_DIR, exist_ok=True)
     path = os.path.join(ISO_DIR, name)
+    tmp = path + ".part"
     remaining = length
-    with open(path, "wb") as f:
-        while remaining > 0:
-            chunk = rfile.read(min(1 << 20, remaining))
-            if not chunk:
-                break
-            f.write(chunk)
-            remaining -= len(chunk)
-    if remaining > 0:
-        raise RuntimeError(f"загрузка оборвалась: не хватило {remaining} байт")
+    # Пишем во временный файл: если источник — тот же самый файл
+    # (выбран прямо из iso_share), он не трогается до конца загрузки.
+    try:
+        with open(tmp, "wb") as f:
+            while remaining > 0:
+                chunk = rfile.read(min(1 << 20, remaining))
+                if not chunk:
+                    break
+                f.write(chunk)
+                remaining -= len(chunk)
+        if remaining > 0:
+            raise RuntimeError(f"загрузка оборвалась: не хватило {remaining} байт")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     return name, path
 
 

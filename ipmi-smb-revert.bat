@@ -1,9 +1,10 @@
 @echo off
 rem ============================================================
-rem  Revert ipmi-smb-setup.bat changes:
-rem   1. remove the BMC firewall rule
-rem   2. disable SMB1 server
-rem   3. restore mandatory SMB signing
+rem  Revert ALL IPMI SMB changes:
+rem   - disable Guest / anonymous access
+rem   - remove Everyone from the share
+rem   - remove the BMC firewall rule
+rem   - disable SMB1, restore mandatory signing
 rem ============================================================
 title IPMI SMB revert (admin)
 
@@ -14,8 +15,8 @@ if %errorlevel% neq 0 (
     exit /b 0
 )
 
-powershell -NoProfile -Command "Remove-NetFirewallRule -DisplayName 'IPMI-BMC-SMB' -ErrorAction SilentlyContinue; Set-SmbServerConfiguration -EnableSMB1Protocol $false -RequireSecuritySignature $true -Force; Disable-WindowsOptionalFeature -Online -FeatureName 'SMB1Protocol-Server' -NoRestart -ErrorAction SilentlyContinue | Out-Null; 'reverted'"
-
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ipmi-smb-revert.ps1"
 echo.
-echo Done: SMB1 disabled, signing restored, firewall rule removed.
+echo Done: passwordless access removed, SMB1 disabled, signing
+echo and firewall restored.
 pause

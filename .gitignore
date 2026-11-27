@@ -13,3 +13,6 @@ config.bat
 IPMI-analysis.md
 iso_share/
 vm_cdrom.html
+
+# Third-party Python libs (install with pip, flagged by some AV)
+vendor/

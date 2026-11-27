@@ -75,6 +75,20 @@ ATEN iKVM 协议基于 noVNC 分支实现
 
 4. 点击 **«Подключить KVM»**（连接 KVM）。
 
+## 虚拟 CD-ROM（挂载 ISO）
+
+1. 在控制台中点击 **«📀 Выбрать ISO-файл…»**（选择 ISO 文件）——镜像会上传到本机的
+   `iso_share` 文件夹，并共享为 `\\<本机>\ipmi_iso`。
+2. 让 BMC 访问该共享——两种方式：
+   - **Windows SMB**：以管理员身份运行一次 `ipmi-smb-setup.bat`，然后运行
+     `ipmi-smb-guest.bat`——完全无需密码；
+   - **如果 Windows SMB 不可用**（或不想重启电脑）：`pip install impacket`，
+     然后运行 `ipmi-smb-server.bat`——独立的 SMB 服务器，监听 445 端口，
+     支持来宾访问（Windows 文件共享将暂停，运行 `ipmi-smb-revert.bat` 可恢复）。
+3. 点击 **«Смонтировать»**（挂载）——设备状态变为“ISO 已挂载”。
+   使用完毕后点击 **«Отмонтировать»**（卸载）；Windows 的修改可用
+   `ipmi-smb-revert.bat` 回滚。
+
 ## 已验证平台
 
 - Supermicro X7SB3，IPMI 固件 0135（ATEN iKVM，`iKVM__V1.69.21`）。

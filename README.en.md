@@ -82,6 +82,21 @@ authorization header and native 32-bit color for the AST2100 encoding.
 
 4. Click **«Подключить KVM»** (Connect KVM).
 
+## Virtual CD-ROM (ISO mounting)
+
+1. In the console click **«📀 Выбрать ISO-файл…»** (Choose ISO file) — the image
+   is uploaded to this PC into `iso_share` and shared as `\\<this PC>\ipmi_iso`.
+2. Give the BMC access to the share — two options:
+   - **Windows SMB**: run `ipmi-smb-setup.bat` once (admin), then
+     `ipmi-smb-guest.bat` — no password needed at all;
+   - **if Windows SMB is broken** (or you don't want to reboot):
+     `pip install impacket` and run `ipmi-smb-server.bat` — a standalone
+     SMB server on port 445 with guest access (Windows file sharing is
+     paused until you run `ipmi-smb-revert.bat`).
+3. Click **«Смонтировать»** (Mount) — the device status becomes "ISO mounted".
+   Afterwards click **«Отмонтировать»** (Unmount); Windows tweaks can be
+   rolled back with `ipmi-smb-revert.bat`.
+
 ## Tested on
 
 - Supermicro X7SB3, IPMI firmware 0135 (ATEN iKVM, `iKVM__V1.69.21`).
